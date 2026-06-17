@@ -3,10 +3,10 @@ package pool
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"sync"
-	"time"
+
+	"github.com/nexsus-ws/nexsus/backplane"
 )
 
 var (
@@ -17,13 +17,7 @@ var (
 )
 
 // Message represents a message sent through the WebSocket
-type Message struct {
-	ID        string                 `json:"id,omitempty"`
-	Topic     string                 `json:"topic"`
-	Payload   json.RawMessage        `json:"payload"`
-	Timestamp time.Time              `json:"timestamp"`
-	Metadata  map[string]interface{} `json:"metadata,omitempty"`
-}
+type Message = backplane.Message
 
 // Connection represents a WebSocket connection
 type Connection interface {
