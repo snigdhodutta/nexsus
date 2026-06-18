@@ -4,6 +4,7 @@ package backplane
 import (
 	"context"
 	"encoding/json"
+	"sync"
 	"time"
 )
 
@@ -14,7 +15,19 @@ type Message struct {
 	Payload   json.RawMessage        `json:"payload"`
 	Timestamp time.Time              `json:"timestamp"`
 	Metadata  map[string]interface{} `json:"metadata,omitempty"`
+	Type      MessageType            `json:"type,omitempty"`
 }
+
+// MessageType defines the type of message
+type MessageType string
+
+const (
+	MessageTypeJSON    MessageType = "json"
+	MessageTypeBinary  MessageType = "binary"
+	MessageTypePing    MessageType = "ping"
+	MessageTypePong    MessageType = "pong"
+	MessageTypeClose   MessageType = "close"
+)
 
 // Backplane is the interface that all backplane implementations must satisfy.
 // It enables horizontal scaling by distributing messages across multiple server instances.
@@ -39,4 +52,29 @@ type Backplane interface {
 
 	// IsDistributed returns true if this backplane supports multi-instance communication
 	IsDistributed() bool
+
+	// Name returns the name of the backplane implementation
+	Name() string
+}
+
+var (
+	defaultBackplane Backplane
+	backplaneMu      sync.RWMutex
+)
+
+// RegisterDefaultBackplane sets the default backplane for single-instance deployments
+func RegisterDefaultBackplane(bp Backplane) {
+	backplaneMu.Lock()
+	defer backplaneMu.Unlock()
+	defaultBackplane = bp
+}
+
+// GetDefaultBackplane returns the currently registered default backplane
+func GetDefaultBackplane() Backplane {
+	backplaneMu.RLock()
+	defer backplaneMu.RUnlock()
+	if defaultBackplane == nil {
+		return nil
+	}
+	return defaultBackplane
 }
