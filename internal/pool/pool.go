@@ -1,51 +1,32 @@
-// Package pool provides high-performance connection pooling.
+// Package pool provides a high-performance connection pool for WebSocket connections.
 package pool
 
 import (
-	"context"
-	"encoding/json"
 	"errors"
 	"sync"
-	"time"
 )
 
-var (
-	ErrPoolFull         = errors.New("connection pool is full")
-	ErrConnectionExists = errors.New("connection already exists")
-	ErrConnectionNotFound = errors.New("connection not found")
-	ErrServerClosed     = errors.New("server closed")
-)
-
-// Message represents a message sent through the WebSocket
-type Message struct {
-	ID        string                 `json:"id,omitempty"`
-	Topic     string                 `json:"topic"`
-	Payload   json.RawMessage        `json:"payload"`
-	Timestamp time.Time              `json:"timestamp"`
-	Metadata  map[string]interface{} `json:"metadata,omitempty"`
-}
-
-// Connection represents a WebSocket connection
+// Connection represents a generic connection interface.
 type Connection interface {
 	ID() string
-	Send(msg *Message) error
 	Close() error
-	Context() context.Context
 }
 
-// ConnectionPool manages WebSocket connections with high performance.
+// ConnectionPool manages WebSocket connections with efficient memory usage.
 type ConnectionPool struct {
-	mu          sync.RWMutex
-	connections map[string]Connection
-	maxSize     int
-	count       int
+	conns  map[string]Connection
+	mu     sync.RWMutex
+	maxCap int
 }
 
-// NewConnectionPool creates a new connection pool with the specified max size.
-func NewConnectionPool(maxSize int) *ConnectionPool {
+// NewConnectionPool creates a new connection pool with the specified capacity.
+func NewConnectionPool(maxCapacity int) *ConnectionPool {
+	if maxCapacity < 100 {
+		maxCapacity = 100
+	}
 	return &ConnectionPool{
-		connections: make(map[string]Connection, maxSize),
-		maxSize:     maxSize,
+		conns:  make(map[string]Connection, maxCapacity/10),
+		maxCap: maxCapacity,
 	}
 }
 
@@ -54,16 +35,11 @@ func (p *ConnectionPool) Add(conn Connection) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if p.maxSize > 0 && p.count >= p.maxSize {
-		return ErrPoolFull
+	if len(p.conns) >= p.maxCap {
+		return errors.New("connection pool at capacity")
 	}
 
-	if _, exists := p.connections[conn.ID()]; exists {
-		return ErrConnectionExists
-	}
-
-	p.connections[conn.ID()] = conn
-	p.count++
+	p.conns[conn.ID()] = conn
 	return nil
 }
 
@@ -72,9 +48,9 @@ func (p *ConnectionPool) Get(id string) (Connection, error) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
-	conn, ok := p.connections[id]
+	conn, ok := p.conns[id]
 	if !ok {
-		return nil, ErrConnectionNotFound
+		return nil, errors.New("connection not found")
 	}
 	return conn, nil
 }
@@ -84,13 +60,12 @@ func (p *ConnectionPool) Remove(id string) (Connection, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	conn, ok := p.connections[id]
+	conn, ok := p.conns[id]
 	if !ok {
-		return nil, ErrConnectionNotFound
+		return nil, errors.New("connection not found")
 	}
 
-	delete(p.connections, id)
-	p.count--
+	delete(p.conns, id)
 	return conn, nil
 }
 
@@ -98,7 +73,7 @@ func (p *ConnectionPool) Remove(id string) (Connection, error) {
 func (p *ConnectionPool) Count() int {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	return p.count
+	return len(p.conns)
 }
 
 // Range iterates over all connections in the pool.
@@ -106,9 +81,9 @@ func (p *ConnectionPool) Range(fn func(id string, conn Connection) bool) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
-	for id, conn := range p.connections {
+	for id, conn := range p.conns {
 		if !fn(id, conn) {
-			break
+			return
 		}
 	}
 }
@@ -117,6 +92,5 @@ func (p *ConnectionPool) Range(fn func(id string, conn Connection) bool) {
 func (p *ConnectionPool) Clear() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.connections = make(map[string]Connection, p.maxSize)
-	p.count = 0
+	p.conns = make(map[string]Connection, p.maxCap/10)
 }

@@ -21,10 +21,12 @@ type MemoryBackplane struct {
 
 // NewMemoryBackplane creates a new in-memory backplane instance.
 func NewMemoryBackplane() backplane.Backplane {
-	return &MemoryBackplane{
-		msgChan: make(chan *backplane.Message, 10000),
+	bp := &MemoryBackplane{
+		msgChan: make(chan *backplane.Message, 50000),
 		topics:  make(map[string]bool),
 	}
+	backplane.RegisterDefaultBackplane(bp)
+	return bp
 }
 
 // Connect initializes the memory backplane (no-op for in-memory).
@@ -101,4 +103,9 @@ func (m *MemoryBackplane) Messages() <-chan *backplane.Message {
 // IsDistributed returns false as this is a single-instance backplane.
 func (m *MemoryBackplane) IsDistributed() bool {
 	return false
+}
+
+// Name returns the name of the backplane implementation.
+func (m *MemoryBackplane) Name() string {
+	return "memory"
 }
